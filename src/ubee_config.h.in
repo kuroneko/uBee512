@@ -1,0 +1,10 @@
+/* ubee_config.h
+*/
+
+#ifndef UBEE_CONFIG_H
+#define UBEE_CONFIG_H
+
+#define USE_OPENGL
+
+
+#endif /* #ifndef UBEE_CONFIG_H */

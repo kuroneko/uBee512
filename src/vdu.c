@@ -725,7 +725,7 @@ int vdu_init (void)
  vdu.col_ptr = vdu.col_ram;
  vdu.pcg_ptr = vdu.pcg_ram;
  vdu.redraw_ptr = vdu.redraw;
- vdu.scr_mask = ~(~0 << 11);
+ vdu.scr_mask = ~(~0u << 11u);
 
  vdu_setcolourtable();
  vdu_create_char_surface();
@@ -772,7 +772,7 @@ int vdu_reset (void)
      vdu.colourram = 0;                     // set to PCG
     }
 
- vdu.scr_mask = ~(~0 << 11);
+ vdu.scr_mask = ~(~0u << 11u);
 
  return 0;
 }
@@ -1041,7 +1041,7 @@ void vdu_lvdat_w (uint16_t port, uint8_t data, struct z80_port_write *port_s)
      vdu.attribram = vdu.lv_dat & B8(00010000);         // attribute RAM select
      vdu.extendram = vdu.lv_dat & B8(10000000);    // extended graphics select
      
-     vdu.scr_mask = ~(~0 << 11);
+     vdu.scr_mask = ~(~0u << 11u);
      if (vdu.extendram)
         vdu.scr_mask |= modelx.vdu << 11;
      else
@@ -1363,21 +1363,22 @@ void vdu_draw_char(SDL_Surface *screen, int x, int y,
 
  /* top non-cursor region */
  srcrect.h  = regionheights[0] * video.yscale;
- SDL_SetColors(char_data, cmap, 0, 2);
+
+ SDL_SetPaletteColors(char_data->format->palette, cmap, 0, 2);
  SDL_BlitSurface(char_data, &srcrect, screen, &dstrect);
  srcrect.y += srcrect.h;
  dstrect.y += srcrect.h;
 
  /* cursor region */
  srcrect.h  = regionheights[1] * video.yscale;
- SDL_SetColors(char_data, inv_cmap, 0, 2);
+ SDL_SetPaletteColors(char_data->format->palette, inv_cmap, 0, 2);
  SDL_BlitSurface(char_data, &srcrect, screen, &dstrect);
  srcrect.y += srcrect.h;
  dstrect.y += srcrect.h;
 
  /* bottom non-cursor region */
  srcrect.h  = regionheights[2] * video.yscale;
- SDL_SetColors(char_data, cmap, 0, 2);
+ SDL_SetPaletteColors(char_data->format->palette, cmap, 0, 2);
  SDL_BlitSurface(char_data, &srcrect, screen, &dstrect);
  srcrect.y += srcrect.h;
  dstrect.y += srcrect.h;

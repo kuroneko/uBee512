@@ -132,6 +132,7 @@ void mouse_configure (int x)
 
  if (mouse.host_in_use)
     {
+      SDL_SetWindowMouseGrab()
      SDL_WM_GrabInput(SDL_GRAB_ON);
      SDL_ShowCursor(SDL_DISABLE);
     }

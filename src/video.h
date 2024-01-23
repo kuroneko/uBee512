@@ -7,15 +7,7 @@
 #ifndef HEADER_VIDEO_H
 #define HEADER_VIDEO_H
 
-#ifdef XCODE
-    #ifdef USE_OPENGL
-        #include "SDL/SDL_opengl.h"
-    #endif
-#else
-    #ifdef USE_OPENGL
-        #include <SDL/SDL_opengl.h>
-    #endif
-#endif
+#include <SDL.h>
 
 // Reasonable maximum video resolution (80x25 @ 11 lines/char)
 #define MAX_VIDEO_WIDTH (80 * 8)

@@ -95,24 +95,10 @@
 #include <string.h>
 #include <assert.h>
 
-#ifdef XCODE
-    #include "SDL/SDL.h"
-    #ifdef USE_OPENGL
-        #include "SDL/SDL_opengl.h"
-    #endif
-#else
-    #include <SDL.h>
-    #ifdef USE_OPENGL
-        #include <SDL/SDL_opengl.h>
-    #endif
-#endif
+#include <SDL.h>
 
-#ifdef MINGW
-    #ifdef USE_OPENGL
-        #include <glext.h>
-    #endif
-    #include <windows.h>
-#else
+#ifdef USE_OPENGL
+#include "glad/gl.h"
 #endif
 
 #include "ubee512.h"
@@ -127,69 +113,9 @@
 // #defined constants
 //==============================================================================
 
-// Set to 1 to include code that checks the OpenGL error number after each
-// OpenGL function is called.
-#define DEBUG_OPENGL 0
-
 //==============================================================================
 // macros
 //==============================================================================
-#ifdef USE_OPENGL
-// report OpenGL error codes from the previous openGL operation
-#if DEBUG_OPENGL
-#define glERR(x, l)                                                     \
-   do {                                                                 \
-    GLenum glerr;                                                       \
-    while ((glerr = glGetError()) != GL_NO_ERROR) {                     \
-     if (modio.video)                                                   \
-        xprintf("Line %d %s() returned 0x%04x\n", l, #x, glerr);        \
-     assert(0);                                                         \
-    }                                                                   \
-   } while(0)
-#define __glCLEARERROR(l)                                               \
-   do {                                                                 \
-    GLenum glerr;                                                       \
-    int i = 100;                                                        \
-    while (i > 0 && (glerr = glGetError()) != GL_NO_ERROR) {            \
-    --i;                                                                \
-    switch (i) {                                                        \
-    case 0:                                                             \
-        if (modio.video)                                                \
-           xprintf("line %d: too many openGL errors (0x%04x)\n", l, glerr); \
-        assert(0);                                                      \
-        break;                                                          \
-    case 25:                                                            \
-    case 50:                                                            \
-    case 75:                                                            \
-        if (modio.video)                                                \
-           xprintf("line %d: waiting for the openGL errors to clear (0x%04x)\n", l, glerr); \
-        break;                                                          \
-     default:                                                           \
-        break;                                                          \
-    }                                                                   \
-    }                                                                   \
-   } while(0)
-#else
-#define glERR(x, l)                                                     \
-    do {                                                                \
-        GLenum glerr;                                                   \
-        while ((glerr = glGetError()) != GL_NO_ERROR) {                 \
-        }                                                               \
-    } while(0)
-#define __glCLEARERROR(l) \
-   glGetError()
-#endif  /* DEBUG_OPENGL */
-
-// call an OpenGL function, printing an error code if any afterwards
-#define glCALL(__FUNC, __ARGS) glCALL2(__LINE__, __FUNC, __ARGS)
-#define glCALL2(__LINE, __FUNC, __ARGS)                         \
-   do {                                                         \
-    __FUNC __ARGS;                                              \
-    glERR(__FUNC, __LINE);                                      \
-   } while(0)
-#define glCLEARERROR() __glCLEARERROR(__LINE__)
-
-#endif
 
 #define NUMENTRIES(x) (sizeof(x)/sizeof(x[0]))
 
@@ -219,9 +145,11 @@ video_t video =
 typedef int RGB_Size[4];
 
 static video_gl_t video_gl;
-static SDL_Surface *gl_screen;
-static RGB_Size rgb_size;
-static int ignore_one_resize_event;
+SDL_Window *sdl_window = NULL;
+static SDL_GLContext gl_context = NULL;
+static SDL_Surface *gl_screen = NULL;
+static RGB_Size rgb_size = {0, };
+static int ignore_one_resize_event = 0;
 
 static RGB_Size rgb_sizes[3] = {
  { 3, 3, 2, 0 },                /* 8bpp */
@@ -267,7 +195,7 @@ struct video_update_regions *video_update_regions;
 
 
 #ifdef USE_OPENGL
-static void video_gl_initialise_context (void);
+static int video_gl_initialise_context (void);
 static void video_gl_clear_display (void);
 static void video_gl_clear_display_borders (void);
 static void video_gl_update_transformation_matrix (void);
@@ -555,29 +483,41 @@ driver_initialised =
 //==============================================================================
 int video_create_window(int width, int height)
 {
+  Uint32 wind_flags = 0;
+#ifdef USE_OPENGL
+  wind_flags |= SDL_WINDOW_OPENGL;
+
+  SDL_GL_SetAttribute(SDL_GL_RED_SIZE, rgb_size[0]);
+  SDL_GL_SetAttribute(SDL_GL_GREEN_SIZE, rgb_size[1]);
+  SDL_GL_SetAttribute(SDL_GL_BLUE_SIZE, rgb_size[2]);
+  SDL_GL_SetAttribute(SDL_GL_ALPHA_SIZE, rgb_size[3]);
+  SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
+  SDL_GL_SetAttribute(SDL_GL_ACCELERATED_VISUAL, 1);
+
+#endif
 #ifndef USE_OPENGL
  return 0;                      /* success */
 #else
  if (video.type != VIDEO_GL)
     return 0;                   /* OpenGL mode not in use, return success */
 
- SDL_GL_SetAttribute(SDL_GL_RED_SIZE, rgb_size[0]);
- SDL_GL_SetAttribute(SDL_GL_GREEN_SIZE, rgb_size[1]);
- SDL_GL_SetAttribute(SDL_GL_BLUE_SIZE, rgb_size[2]);
- SDL_GL_SetAttribute(SDL_GL_ALPHA_SIZE, rgb_size[3]);
- SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
- SDL_GL_SetAttribute(SDL_GL_ACCELERATED_VISUAL, 1);
+  // Vsync: swap buffers every n'th retrace (0 to disable, 1 is the default)
+  SDL_GL_SetSwapInterval(video.vsync);
 
- // Vsync: swap buffers every n'th retrace (0 to disable, 1 is the default)
- SDL_GL_SetAttribute(SDL_GL_SWAP_CONTROL, video.vsync);
+  // don't free this surface if resetting!
 
- // don't free this surface if resetting!
- // gl_window_w and gl_window_h have already been set before calling this function
- if ((gl_screen = SDL_SetVideoMode(video.gl_window_w, video.gl_window_h, 0, video.flags)) == NULL)
-    {
-     xprintf("video_create_surface: SDL_SetVideoMode failed - %s\n", SDL_GetError());
-     return -1;
-    }
+  // gl_window_w and gl_window_h have already been set before calling this function
+  sdl_window = SDL_CreateWindow(TITLESTRING,
+                                SDL_WINDOWPOS_UNDEFINED,
+                                SDL_WINDOWPOS_UNDEFINED,
+                                video.gl_window_w,
+                                video.gl_window_h,
+                                video.flags);
+  if (NULL == sdl_window)
+  {
+    xprintf("video_create_surface: SDL_CreateWindow failed - %s\n", SDL_GetError());
+    return -1;
+  }
 
  SDL_GL_GetAttribute( SDL_GL_DEPTH_SIZE, &video_gl.bpp );
 
@@ -614,20 +554,19 @@ int video_create_window(int width, int height)
 //==============================================================================
 // Initialise the OpenGL context
 //==============================================================================
-static void video_gl_initialise_context (void)
+static int video_gl_initialise_context (void)
 {
-#if DEBUG_OPENGL
- /* debugging colour! */
- glClearColor(0.5, 0.5, 1.0, 1.0);
-#else
- glClearColor(0.0, 0.0, 0.0, 1.0);
-#endif
- glCALL(glShadeModel,(GL_FLAT));
- glCALL(glDisable,(GL_CULL_FACE));
- glCALL(glDisable,(GL_DEPTH_TEST));
- glCALL(glDisable,(GL_ALPHA_TEST));
- glCALL(glDisable,(GL_LIGHTING));
- glCALL(glHint,(GL_PERSPECTIVE_CORRECTION_HINT, GL_FASTEST));
+  gl_context = SDL_GL_CreateContext(sdl_window);
+  if (NULL == gl_context) {
+    xprintf("video_create_surface: SDL_GL_CreateContext failed - %s\n", SDL_GetError());
+    return -1;
+  }
+
+ glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+ glDisable(GL_CULL_FACE);
+ glDisable(GL_DEPTH_TEST);
+
+ return 0;
 }
 
 //==============================================================================
@@ -635,14 +574,9 @@ static void video_gl_initialise_context (void)
 //==============================================================================
 static void video_gl_clear_display (void)
 {
-#if DEBUG_OPENGL
- SDL_FillRect(gl_screen, NULL, SDL_MapRGB(gl_screen->format, 0xff, 0x80, 0xff));
-#else
- SDL_FillRect(gl_screen, NULL, SDL_MapRGB(gl_screen->format, 0, 0, 0));
-#endif
- glCALL(glClear,(GL_COLOR_BUFFER_BIT));
- SDL_GL_SwapBuffers();
- glCALL(glClear,(GL_COLOR_BUFFER_BIT));
+  glClear(GL_COLOR_BUFFER_BIT);
+  SDL_GL_SwapWindow(sdl_window);
+  glClear(GL_COLOR_BUFFER_BIT);
 }
 
 //==============================================================================
@@ -653,11 +587,7 @@ static void video_gl_clear_display_borders (void)
  SDL_Rect r;
  Uint32 colour = 
     SDL_MapRGB(gl_screen->format, 
-#if DEBUG_OPENGL
-               0xff, 0x80, 0xff
-#else
                0, 0, 0
-#endif
        );
  if (video_gl.texture_region.x == 0 && video_gl.texture_region.y != 0)
     {
